@@ -1,0 +1,9 @@
+Visit Root - cd /
+Change ti etc - cd etc
+open paths file - sudo vim paths
+insert - i
+add path - copy the path at the end
+Exit sequence -
+  ESC
+  :wq
+  Enter
