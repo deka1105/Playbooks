@@ -1,0 +1,4 @@
+git clone <url of exsisting repository from github>
+git add .
+git commit -m "Message String"
+git push
