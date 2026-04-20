@@ -1,12 +1,15 @@
-# v04 - record
+# v05 - record +  automate
 
 import time
 import pyautogui
 import argparse
 import ast
-import subprocess
-import sys
+import threading
 from datetime import datetime, timedelta
+
+import mss
+import cv2
+import numpy as np
 
 
 def show_timer(seconds, message=""):
@@ -31,46 +34,62 @@ def seconds_until_target(time_str):
     return int((target - now).total_seconds())
 
 
-def start_screen_recording():
-    print("Starting screen recording...")
+# -------- Screen Recording --------
+recording_flag = False
 
-    if sys.platform == "darwin":  # macOS
-        # Uses QuickTime via AppleScript
-        subprocess.Popen([
-            "osascript",
-            "-e",
-            'tell application "QuickTime Player" to activate',
-            "-e",
-            'tell application "QuickTime Player" to new screen recording'
-        ])
+def screen_recorder(output_file="recording.mp4", fps=20):
+    global recording_flag
 
-    elif sys.platform.startswith("linux"):
-        # Requires ffmpeg installed
-        subprocess.Popen([
-            "ffmpeg",
-            "-video_size", "1920x1080",
-            "-framerate", "25",
-            "-f", "x11grab",
-            "-i", ":0.0",
-            "output.mp4"
-        ])
+    with mss.mss() as sct:
+        monitor = sct.monitors[1]  # full screen
 
-    elif sys.platform == "win32":
-        # Uses Xbox Game Bar (Win + Alt + R)
-        pyautogui.hotkey("win", "alt", "r")
+        width = monitor["width"]
+        height = monitor["height"]
 
-    else:
-        print("Screen recording not supported on this OS.")
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        out = cv2.VideoWriter(output_file, fourcc, fps, (width, height))
+
+        while recording_flag:
+            img = sct.grab(monitor)
+            frame = np.array(img)
+
+            # Convert BGRA → BGR
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+
+            out.write(frame)
+
+        out.release()
+        print(f"\nRecording saved to {output_file}")
 
 
+def start_recording():
+    global recording_flag
+    recording_flag = True
+
+    filename = f"recording_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+
+    thread = threading.Thread(target=screen_recorder, args=(filename,), daemon=True)
+    thread.start()
+
+    return thread
+
+
+def stop_recording():
+    global recording_flag
+    recording_flag = False
+
+
+# -------- Main Logic --------
 def countdown(seconds, coordinates, delay_between=10, record=False):
     print("Starting countdown...")
     show_timer(seconds, message="Time left: ")
 
     print("Time's up!")
 
+    recorder_thread = None
     if record:
-        start_screen_recording()
+        print("Starting screen recording...")
+        recorder_thread = start_recording()
 
     print("Starting clicks...\n")
 
@@ -82,16 +101,21 @@ def countdown(seconds, coordinates, delay_between=10, record=False):
             print(f"Waiting {delay_between} seconds before next click...")
             show_timer(delay_between, message="Next click in: ")
 
+    if record:
+        print("Stopping recording...")
+        stop_recording()
+        time.sleep(2)  # give thread time to close
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Countdown clicker script")
+    parser = argparse.ArgumentParser(description="Countdown clicker with auto recording")
 
     parser.add_argument("--seconds", type=int, help="Countdown time in seconds")
-    parser.add_argument("--time", type=str, help='Target time in HH:MM (24hr), e.g. "02:15"')
+    parser.add_argument("--time", type=str, help='Target time in HH:MM (24hr)')
     parser.add_argument("--coords", type=str, required=True,
                         help="List of coordinates, e.g. '[(100,200),(300,400)]'")
-    parser.add_argument("--delay", type=int, default=10, help="Delay between clicks (seconds)")
-    parser.add_argument("--record", action="store_true", help="Start screen recording when timer ends")
+    parser.add_argument("--delay", type=int, default=10)
+    parser.add_argument("--record", action="store_true", help="Enable screen recording")
 
     args = parser.parse_args()
 
@@ -107,16 +131,134 @@ def main():
         print("Invalid coordinates format. Use: '[(x1,y1),(x2,y2)]'")
         return
 
-    if args.time:
-        seconds = seconds_until_target(args.time)
-    else:
-        seconds = args.seconds
+    seconds = seconds_until_target(args.time) if args.time else args.seconds
 
     countdown(seconds, coordinates, args.delay, args.record)
 
 
 if __name__ == "__main__":
     main()
+
+
+# v04 - record + manual
+
+# import time
+# import pyautogui
+# import argparse
+# import ast
+# import subprocess
+# import sys
+# from datetime import datetime, timedelta
+
+
+# def show_timer(seconds, message=""):
+#     while seconds >= 0:
+#         mins, secs = divmod(seconds, 60)
+#         timer = f'{mins:02d}:{secs:02d}'
+#         print(f"{message}{timer}", end="\r")
+#         time.sleep(1)
+#         seconds -= 1
+#     print()
+
+
+# def seconds_until_target(time_str):
+#     now = datetime.now()
+#     target = datetime.strptime(time_str, "%H:%M").replace(
+#         year=now.year, month=now.month, day=now.day
+#     )
+
+#     if target <= now:
+#         target += timedelta(days=1)
+
+#     return int((target - now).total_seconds())
+
+
+# def start_screen_recording():
+#     print("Starting screen recording...")
+
+#     if sys.platform == "darwin":  # macOS
+#         # Uses QuickTime via AppleScript
+#         subprocess.Popen([
+#             "osascript",
+#             "-e",
+#             'tell application "QuickTime Player" to activate',
+#             "-e",
+#             'tell application "QuickTime Player" to new screen recording'
+#         ])
+
+#     elif sys.platform.startswith("linux"):
+#         # Requires ffmpeg installed
+#         subprocess.Popen([
+#             "ffmpeg",
+#             "-video_size", "1920x1080",
+#             "-framerate", "25",
+#             "-f", "x11grab",
+#             "-i", ":0.0",
+#             "output.mp4"
+#         ])
+
+#     elif sys.platform == "win32":
+#         # Uses Xbox Game Bar (Win + Alt + R)
+#         pyautogui.hotkey("win", "alt", "r")
+
+#     else:
+#         print("Screen recording not supported on this OS.")
+
+
+# def countdown(seconds, coordinates, delay_between=10, record=False):
+#     print("Starting countdown...")
+#     show_timer(seconds, message="Time left: ")
+
+#     print("Time's up!")
+
+#     if record:
+#         start_screen_recording()
+
+#     print("Starting clicks...\n")
+
+#     for i, (x, y) in enumerate(coordinates):
+#         pyautogui.click(x, y)
+#         print(f"Clicked at ({x}, {y})")
+
+#         if i < len(coordinates) - 1:
+#             print(f"Waiting {delay_between} seconds before next click...")
+#             show_timer(delay_between, message="Next click in: ")
+
+
+# def main():
+#     parser = argparse.ArgumentParser(description="Countdown clicker script")
+
+#     parser.add_argument("--seconds", type=int, help="Countdown time in seconds")
+#     parser.add_argument("--time", type=str, help='Target time in HH:MM (24hr), e.g. "02:15"')
+#     parser.add_argument("--coords", type=str, required=True,
+#                         help="List of coordinates, e.g. '[(100,200),(300,400)]'")
+#     parser.add_argument("--delay", type=int, default=10, help="Delay between clicks (seconds)")
+#     parser.add_argument("--record", action="store_true", help="Start screen recording when timer ends")
+
+#     args = parser.parse_args()
+
+#     if not args.seconds and not args.time:
+#         print("Provide either --seconds or --time")
+#         return
+
+#     try:
+#         coordinates = ast.literal_eval(args.coords)
+#         if not isinstance(coordinates, list):
+#             raise ValueError
+#     except:
+#         print("Invalid coordinates format. Use: '[(x1,y1),(x2,y2)]'")
+#         return
+
+#     if args.time:
+#         seconds = seconds_until_target(args.time)
+#     else:
+#         seconds = args.seconds
+
+#     countdown(seconds, coordinates, args.delay, args.record)
+
+
+# if __name__ == "__main__":
+#     main()
 
 
 # Usage:    python clicker.py --time 02:15 --coords "[(100,200),(300,400)]" --delay 10
