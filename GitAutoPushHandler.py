@@ -17,8 +17,17 @@ class GitAutoPushHandler(FileSystemEventHandler):
         self.repo_path = repo_path
         self.last_commit_time = 0
 
+    # Directories that must never be mirrored into the clone. Copying .git
+    # over the clone's own .git corrupts it; the rest are build artefacts that
+    # bloat the push (a .venv alone is thousands of files).
+    SKIP_DIRS = {
+        ".git", ".venv", "venv", "node_modules", "__pycache__",
+        ".pytest_cache", ".ruff_cache", ".next", ".mypy_cache", "dist", "build",
+    }
+
     def sync_files(self):
         for root, dirs, files in os.walk(self.local_path):
+            dirs[:] = [d for d in dirs if d not in self.SKIP_DIRS]
             rel_path = os.path.relpath(root, self.local_path)
             target_dir = os.path.join(self.repo_path, rel_path)
 
